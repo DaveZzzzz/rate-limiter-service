@@ -15,6 +15,7 @@ const ESTIMATED_BYTES_PER_BUCKET = 256;
 
 export class BucketStore {
   private readonly buckets = new Map<string, StoredBucket>();
+  private readonly tenantCounts = new Map<string, number>();
   private head?: StoredBucket;
   private tail?: StoredBucket;
   private sweepTimer?: ReturnType<typeof setInterval>;
@@ -22,7 +23,11 @@ export class BucketStore {
   constructor(
     private readonly maxKeys: number,
     private readonly ttlMs: number,
-  ) {}
+  ) {
+    if (!Number.isInteger(maxKeys) || maxKeys < 1) {
+      throw new Error("maxKeys must be a positive integer");
+    }
+  }
 
   startSweep(intervalMs: number, now: () => number): void {
     this.stopSweep();
@@ -39,6 +44,10 @@ export class BucketStore {
     }
   }
 
+  get(key: string): StoredBucket | undefined {
+    return this.buckets.get(key);
+  }
+
   getOrCreate(key: string, policy: RateLimitPolicy, nowMs: number): StoredBucket {
     const existing = this.buckets.get(key);
     if (existing) {
@@ -49,7 +58,11 @@ export class BucketStore {
 
     this.evictExpired(nowMs);
     while (this.buckets.size >= this.maxKeys) {
+      const before = this.buckets.size;
       this.evictLru();
+      if (this.buckets.size >= before) {
+        break;
+      }
     }
 
     const algorithm = getAlgorithm(policy);
@@ -61,21 +74,21 @@ export class BucketStore {
       lastAccessMs: nowMs,
     };
     this.buckets.set(key, created);
+    this.tenantCounts.set(policy.tenantId, (this.tenantCounts.get(policy.tenantId) ?? 0) + 1);
     this.pushFront(created);
     return created;
   }
 
   deleteByTenant(tenantId: string, keySubstring?: string): number {
     let removed = 0;
-    for (const bucket of [...this.buckets.values()]) {
-      if (bucket.tenantId !== tenantId) {
-        continue;
+    let cursor = this.head;
+    while (cursor) {
+      const next = cursor.next;
+      if (cursor.tenantId === tenantId && (!keySubstring || cursor.key.includes(keySubstring))) {
+        this.remove(cursor);
+        removed += 1;
       }
-      if (keySubstring && !bucket.key.includes(keySubstring)) {
-        continue;
-      }
-      this.remove(bucket);
-      removed += 1;
+      cursor = next;
     }
     return removed;
   }
@@ -84,13 +97,7 @@ export class BucketStore {
     if (!tenantId) {
       return this.buckets.size;
     }
-    let count = 0;
-    for (const bucket of this.buckets.values()) {
-      if (bucket.tenantId === tenantId) {
-        count += 1;
-      }
-    }
-    return count;
+    return this.tenantCounts.get(tenantId) ?? 0;
   }
 
   estimatedBytes(tenantId?: string): number {
@@ -159,5 +166,11 @@ export class BucketStore {
   private remove(bucket: StoredBucket): void {
     this.detach(bucket);
     this.buckets.delete(bucket.key);
+    const remaining = (this.tenantCounts.get(bucket.tenantId) ?? 1) - 1;
+    if (remaining <= 0) {
+      this.tenantCounts.delete(bucket.tenantId);
+    } else {
+      this.tenantCounts.set(bucket.tenantId, remaining);
+    }
   }
 }

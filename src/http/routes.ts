@@ -24,6 +24,9 @@ export async function registerRoutes(app: FastifyInstance, limiter: RateLimiter)
 
   app.post<{ Body: CheckBody }>("/v1/rate-limit/check", async (request, reply) => {
     const body = request.body;
+    if (body.cost !== undefined && !(Number.isFinite(body.cost) && body.cost > 0)) {
+      return reply.code(400).send({ error: "cost must be a positive finite number" });
+    }
     const ctx: RequestContext = {
       tenantId: body.tenantId,
       clientIp: body.clientIp,

@@ -187,6 +187,88 @@ describe("multi-dimension keys", () => {
   });
 });
 
+describe("request cost", () => {
+  it("rejects zero, negative, and non-finite cost even when fail-open", () => {
+    limiter = new RateLimiter({
+      failOpen: true,
+      clock: new FakeClock(1_700_000_000_000),
+      sweepIntervalMs: 60_000,
+      policies: [
+        {
+          id: "user",
+          tenantId,
+          name: "user",
+          algorithm: "token-bucket",
+          capacity: 3,
+          refillRatePerSecond: 3,
+          keyStrategy: { dimensions: ["userId"] },
+        },
+      ],
+    });
+
+    expect(limiter.evaluate(ctx({ cost: -1 })).allowed).toBe(false);
+    expect(limiter.evaluate(ctx({ cost: 0 })).allowed).toBe(false);
+    expect(limiter.evaluate(ctx({ cost: Number.NaN })).allowed).toBe(false);
+    expect(limiter.evaluate(ctx({ cost: Number.POSITIVE_INFINITY })).allowed).toBe(false);
+    const allowed = limiter.evaluate(ctx());
+    expect(allowed.allowed).toBe(true);
+    expect(allowed.remaining).toBe(2);
+  });
+});
+
+describe("peek persistence", () => {
+  it("does not persist buckets for keys that never commit", () => {
+    limiter = new RateLimiter({
+      maxKeys: 8,
+      clock: new FakeClock(1_700_000_000_000),
+      sweepIntervalMs: 60_000,
+      policies: [
+        {
+          id: "tenant",
+          tenantId,
+          name: "tenant",
+          algorithm: "token-bucket",
+          capacity: 1,
+          refillRatePerSecond: 1,
+          scope: "tenant",
+          keyStrategy: { dimensions: [] },
+        },
+        {
+          id: "user",
+          tenantId,
+          name: "user",
+          algorithm: "token-bucket",
+          capacity: 10,
+          refillRatePerSecond: 10,
+          scope: "client",
+          keyStrategy: { dimensions: ["userId"] },
+        },
+      ],
+    });
+
+    expect(limiter.evaluate(ctx({ userId: "seed", priority: "critical" })).allowed).toBe(true);
+    for (let i = 0; i < 50; i += 1) {
+      const denied = limiter.evaluate(ctx({ userId: `probe-${i}`, priority: "critical" }));
+      expect(denied.allowed).toBe(false);
+      expect(denied.reason).toBe("TENANT_QUOTA_EXCEEDED");
+    }
+
+    expect(limiter.tenantMetrics(tenantId).activeTrackedKeys).toBeLessThanOrEqual(2);
+  });
+});
+
+describe("store configuration", () => {
+  it("rejects a non-positive maxKeys cap", () => {
+    expect(
+      () =>
+        new RateLimiter({
+          maxKeys: 0,
+          policies: [],
+        }),
+    ).toThrow(/maxKeys/);
+  });
+});
+
 describe("memory eviction", () => {
   it("bounds tracked keys under churn", () => {
     limiter = new RateLimiter({

@@ -106,6 +106,38 @@ describe("HTTP API", () => {
     expect(promo.body).toContain("rate_limit_evaluations_total");
   });
 
+  it("rejects non-positive cost with 400", async () => {
+    const limiter = new RateLimiter({
+      policies: [
+        {
+          id: "user",
+          tenantId,
+          name: "user",
+          algorithm: "token-bucket",
+          capacity: 10,
+          refillRatePerSecond: 10,
+          keyStrategy: { dimensions: ["userId"] },
+        },
+      ],
+    });
+    app = await appWith(limiter);
+
+    const blocked = await app.inject({
+      method: "POST",
+      url: "/v1/rate-limit/check",
+      payload: {
+        tenantId,
+        clientIp: "203.0.113.10",
+        userId: "usr_1",
+        route: "/",
+        method: "GET",
+        cost: -5,
+      },
+    });
+    expect(blocked.statusCode).toBe(400);
+    expect(JSON.parse(blocked.body).error).toMatch(/cost/);
+  });
+
   it("resets quotas", async () => {
     const limiter = new RateLimiter({
       policies: [

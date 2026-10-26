@@ -45,8 +45,18 @@ export class RateLimiter {
   }
 
   evaluate(ctx: RequestContext): RateLimitResult {
+    const cost = ctx.cost ?? 1;
+    if (!isPositiveCost(cost)) {
+      return {
+        allowed: false,
+        limit: 0,
+        remaining: 0,
+        resetAt: Math.floor(this.clock.nowMs() / 1000),
+        retryAfterSeconds: 1,
+      };
+    }
     try {
-      return this.evaluateOrThrow(ctx);
+      return this.evaluateOrThrow(ctx, cost);
     } catch {
       if (this.failOpen) {
         return { allowed: true, limit: 0, remaining: 0, resetAt: Math.floor(this.clock.nowMs() / 1000) };
@@ -83,9 +93,8 @@ export class RateLimiter {
     );
   }
 
-  private evaluateOrThrow(ctx: RequestContext): RateLimitResult {
+  private evaluateOrThrow(ctx: RequestContext, cost: number): RateLimitResult {
     const nowMs = this.clock.nowMs();
-    const cost = ctx.cost ?? 1;
     if (this.policies.forTenant(ctx.tenantId).length === 0) {
       const result: RateLimitResult = this.failOpen
         ? { allowed: true, limit: 0, remaining: 0, resetAt: Math.floor(nowMs / 1000) }
@@ -161,8 +170,9 @@ export class RateLimiter {
   private peekAll(items: Applicable[], cost: number, nowMs: number) {
     return items.map((item) => {
       const algorithm = getAlgorithm(item.policy);
-      const bucket = this.buckets.getOrCreate(item.key, item.policy, nowMs);
-      return { item, result: algorithm.peek(bucket.state, item.policy, cost, nowMs) };
+      const existing = this.buckets.get(item.key);
+      const state = existing?.state ?? algorithm.createState(item.policy, nowMs);
+      return { item, result: algorithm.peek(state, item.policy, cost, nowMs) };
     });
   }
 
@@ -205,6 +215,10 @@ function toResult(consume: ConsumeResult, reason: RateLimitResult["reason"]): Ra
     retryAfterSeconds: consume.retryAfterSeconds,
     reason,
   };
+}
+
+function isPositiveCost(cost: number): boolean {
+  return Number.isFinite(cost) && cost > 0;
 }
 
 function fallbackAllow(nowMs: number): ConsumeResult {
