@@ -30,13 +30,13 @@ export function isTenantPolicy(policy: RateLimitPolicy): boolean {
 }
 
 export function buildCompositeKey(policy: RateLimitPolicy, ctx: RequestContext): string {
-  const parts = [`t=${ctx.tenantId}`, `p=${policy.id}`];
+  const parts = [`t=${encodeURIComponent(ctx.tenantId)}`, `p=${encodeURIComponent(policy.id)}`];
   const dimensions = isTenantPolicy(policy)
     ? ([] as KeyDimension[])
     : policy.keyStrategy.dimensions;
 
   for (const dimension of dimensions) {
-    parts.push(`${dimension}=${dimensionValue(dimension, policy, ctx)}`);
+    parts.push(`${dimension}=${encodeURIComponent(dimensionValue(dimension, policy, ctx))}`);
   }
   return parts.join("|");
 }

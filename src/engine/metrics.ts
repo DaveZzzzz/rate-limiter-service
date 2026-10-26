@@ -7,6 +7,13 @@ interface Counters {
   noisyNeighborsIsolated: number;
 }
 
+const EMPTY_COUNTERS: Counters = {
+  totalEvaluations: 0,
+  allowedCount: 0,
+  blockedCount: 0,
+  noisyNeighborsIsolated: 0,
+};
+
 export class MetricsRegistry {
   private readonly tenants = new Map<string, Counters>();
 
@@ -28,7 +35,7 @@ export class MetricsRegistry {
     activeTrackedKeys: number,
     currentMemoryEstimatedBytes: number,
   ): TenantMetrics {
-    const counters = this.forTenant(tenantId);
+    const counters = this.tenants.get(tenantId) ?? EMPTY_COUNTERS;
     return {
       tenantId,
       activeTrackedKeys,
@@ -95,5 +102,5 @@ export function renderPrometheus(snapshots: TenantMetrics[]): string {
 }
 
 function escapeLabel(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return value.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/"/g, '\\"');
 }

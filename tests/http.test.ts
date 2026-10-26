@@ -1,9 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FakeClock } from "../src/algorithms/clock.js";
 import { RateLimiter } from "../src/engine/rate-limiter.js";
 import { buildApp } from "../src/http/app.js";
 
 const tenantId = "org-acme-prod";
+const adminToken = "test-admin-token";
+const adminHeaders = { "x-admin-token": adminToken };
 
 async function appWith(limiter: RateLimiter) {
   return buildApp({ limiter, enableDemoMiddleware: true });
@@ -12,7 +14,12 @@ async function appWith(limiter: RateLimiter) {
 describe("HTTP API", () => {
   let app: Awaited<ReturnType<typeof buildApp>> | undefined;
 
+  beforeEach(() => {
+    process.env.ADMIN_TOKEN = adminToken;
+  });
+
   afterEach(async () => {
+    delete process.env.ADMIN_TOKEN;
     if (app) {
       await app.close();
       app = undefined;
@@ -97,6 +104,7 @@ describe("HTTP API", () => {
     const metrics = await app.inject({
       method: "GET",
       url: `/v1/tenants/${tenantId}/metrics`,
+      headers: adminHeaders,
     });
     expect(metrics.statusCode).toBe(200);
     expect(JSON.parse(metrics.body).totalEvaluations).toBe(1);
@@ -165,9 +173,17 @@ describe("HTTP API", () => {
       (await app.inject({ method: "POST", url: "/v1/rate-limit/check", payload })).statusCode,
     ).toBe(429);
 
+    const denied = await app.inject({
+      method: "POST",
+      url: "/v1/rate-limit/reset",
+      payload: { tenantId },
+    });
+    expect(denied.statusCode).toBe(401);
+
     const reset = await app.inject({
       method: "POST",
       url: "/v1/rate-limit/reset",
+      headers: adminHeaders,
       payload: { tenantId },
     });
     expect(JSON.parse(reset.body).removed).toBeGreaterThan(0);

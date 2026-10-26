@@ -267,6 +267,49 @@ describe("store configuration", () => {
         }),
     ).toThrow(/maxKeys/);
   });
+
+  it("rejects a non-positive policy capacity", () => {
+    expect(
+      () =>
+        new RateLimiter({
+          policies: [
+            {
+              id: "bad",
+              tenantId,
+              name: "bad",
+              algorithm: "token-bucket",
+              capacity: 0,
+              refillRatePerSecond: 1,
+              keyStrategy: { dimensions: [] },
+            },
+          ],
+        }),
+    ).toThrow(/capacity/);
+  });
+
+  it("keeps sliding-window state for at least the policy window", () => {
+    const clock = new FakeClock(0);
+    limiter = new RateLimiter({
+      clock,
+      sweepIntervalMs: 60_000,
+      policies: [
+        {
+          id: "user",
+          tenantId,
+          name: "user",
+          algorithm: "sliding-window",
+          capacity: 1,
+          windowSizeSeconds: 120,
+          keyStrategy: { dimensions: ["userId"] },
+        },
+      ],
+    });
+
+    expect(limiter.evaluate(ctx()).allowed).toBe(true);
+    expect(limiter.evaluate(ctx()).allowed).toBe(false);
+    clock.advance(61_000);
+    expect(limiter.evaluate(ctx()).allowed).toBe(false);
+  });
 });
 
 describe("memory eviction", () => {
@@ -299,6 +342,38 @@ describe("memory eviction", () => {
   });
 });
 
+describe("reported remaining", () => {
+  it("exposes the tightest remaining across client and tenant policies", () => {
+    const engine = policies([
+      {
+        id: "tenant",
+        tenantId,
+        name: "tenant",
+        algorithm: "token-bucket",
+        capacity: 2,
+        refillRatePerSecond: 2,
+        scope: "tenant",
+        keyStrategy: { dimensions: [] },
+      },
+      {
+        id: "user",
+        tenantId,
+        name: "user",
+        algorithm: "token-bucket",
+        capacity: 100,
+        refillRatePerSecond: 100,
+        scope: "client",
+        keyStrategy: { dimensions: ["userId"] },
+      },
+    ]);
+
+    const first = engine.evaluate(ctx());
+    expect(first.allowed).toBe(true);
+    expect(first.remaining).toBe(1);
+    expect(first.limit).toBe(2);
+  });
+});
+
 describe("priority shedder", () => {
   it("sheds background traffic when the tenant is near capacity", () => {
     const engine = policies([
@@ -321,6 +396,34 @@ describe("priority shedder", () => {
     const background = engine.evaluate(ctx({ userId: "bg", priority: "background" }));
     expect(background.allowed).toBe(false);
     expect(background.reason).toBe("NOISY_NEIGHBOR_THROTTLED");
+
+    const critical = engine.evaluate(ctx({ userId: "crit", priority: "critical" }));
+    expect(critical.allowed).toBe(true);
+  });
+
+  it("treats unknown priorities as standard", () => {
+    const engine = policies([
+      {
+        id: "tenant",
+        tenantId,
+        name: "tenant",
+        algorithm: "token-bucket",
+        capacity: 20,
+        refillRatePerSecond: 20,
+        scope: "tenant",
+        keyStrategy: { dimensions: [] },
+      },
+    ]);
+
+    for (let i = 0; i < 19; i += 1) {
+      expect(engine.evaluate(ctx({ userId: `u${i}`, priority: "critical" })).allowed).toBe(true);
+    }
+
+    const spoofed = engine.evaluate(
+      ctx({ userId: "spoof", priority: "not-critical" as RequestContext["priority"] }),
+    );
+    expect(spoofed.allowed).toBe(false);
+    expect(spoofed.reason).toBe("NOISY_NEIGHBOR_THROTTLED");
 
     const critical = engine.evaluate(ctx({ userId: "crit", priority: "critical" }));
     expect(critical.allowed).toBe(true);

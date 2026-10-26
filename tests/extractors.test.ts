@@ -14,6 +14,11 @@ describe("IPv6 masking", () => {
     expect(c).not.toBe(a);
   });
 
+  it("returns unknown for missing IPs", () => {
+    expect(canonicalizeClientIp(undefined)).toBe("unknown");
+    expect(canonicalizeClientIp("")).toBe("unknown");
+  });
+
   it("leaves IPv4 unchanged", () => {
     expect(canonicalizeClientIp("203.0.113.10", 64)).toBe("203.0.113.10");
   });
@@ -74,5 +79,32 @@ describe("composite keys", () => {
     expect(buildCompositeKey(userPolicy, ctx)).toContain("userId=usr_1");
     expect(buildCompositeKey(ipPolicy, ctx)).toContain("ip=203.0.113.5");
     expect(buildCompositeKey(userPolicy, ctx)).not.toBe(buildCompositeKey(ipPolicy, ctx));
+  });
+
+  it("does not let delimiter characters collide with other dimensions", () => {
+    const injected: RequestContext = {
+      tenantId: "org",
+      clientIp: "203.0.113.5",
+      userId: "usr_1|ip=203.0.113.5",
+      route: "/api",
+      method: "GET",
+      headers: {},
+    };
+    const userPolicy: RateLimitPolicy = {
+      id: "user",
+      tenantId: "org",
+      name: "user",
+      algorithm: "token-bucket",
+      capacity: 1,
+      refillRatePerSecond: 1,
+      keyStrategy: { dimensions: ["userId"] },
+    };
+    const bothPolicy: RateLimitPolicy = {
+      ...userPolicy,
+      id: "both",
+      keyStrategy: { dimensions: ["userId", "ip"] },
+    };
+    const honest: RequestContext = { ...injected, userId: "usr_1" };
+    expect(buildCompositeKey(userPolicy, injected)).not.toBe(buildCompositeKey(bothPolicy, honest));
   });
 });

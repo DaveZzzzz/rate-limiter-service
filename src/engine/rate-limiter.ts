@@ -36,7 +36,10 @@ export class RateLimiter {
     this.failOpen = options.failOpen ?? false;
     this.shedThreshold = options.shedThreshold ?? 0.9;
     this.standardShedThreshold = options.standardShedThreshold ?? 0.95;
-    this.buckets = new BucketStore(options.maxKeys ?? 100_000, options.ttlMs ?? 60_000);
+    this.buckets = new BucketStore(
+      options.maxKeys ?? 100_000,
+      options.ttlMs ?? defaultTtlMs(options.policies ?? []),
+    );
     this.buckets.startSweep(options.sweepIntervalMs ?? 5_000, () => this.clock.nowMs());
   }
 
@@ -106,7 +109,6 @@ export class RateLimiter {
             retryAfterSeconds: 1,
             reason: "TENANT_QUOTA_EXCEEDED",
           };
-      this.metrics.record(ctx.tenantId, result.allowed, result.reason);
       return result;
     }
     const applicable = this.applicablePolicies(ctx);
@@ -124,7 +126,7 @@ export class RateLimiter {
     const tenantPeek = this.peekAll(tenant, cost, nowMs);
     const tightestTenant = tightest(tenantPeek.map((item) => item.result));
     const utilization = tightestTenant?.utilization ?? 0;
-    const shed = this.shouldShed(ctx.priority ?? "standard", utilization);
+    const shed = this.shouldShed(normalizePriority(ctx.priority), utilization);
     if (shed) {
       const result: RateLimitResult = {
         allowed: false,
@@ -148,9 +150,10 @@ export class RateLimiter {
     this.commitAll(client, cost, nowMs);
     const committedTenant = this.commitAll(tenant, cost, nowMs);
     const reported =
-      tightest(clientPeek.map((item) => item.result)) ??
-      tightest(committedTenant) ??
-      fallbackAllow(nowMs);
+      tightest([
+        ...clientPeek.map((item) => item.result),
+        ...committedTenant,
+      ]) ?? fallbackAllow(nowMs);
     this.metrics.record(ctx.tenantId, true);
     return {
       allowed: true,
@@ -219,6 +222,26 @@ function toResult(consume: ConsumeResult, reason: RateLimitResult["reason"]): Ra
 
 function isPositiveCost(cost: number): boolean {
   return Number.isFinite(cost) && cost > 0;
+}
+
+function normalizePriority(priority: RequestContext["priority"]): NonNullable<RequestContext["priority"]> {
+  if (priority === "critical" || priority === "standard" || priority === "background") {
+    return priority;
+  }
+  return "standard";
+}
+
+function defaultTtlMs(policies: RateLimitPolicy[]): number {
+  let ttlMs = 60_000;
+  for (const policy of policies) {
+    if (policy.windowSizeSeconds && policy.windowSizeSeconds > 0) {
+      ttlMs = Math.max(ttlMs, policy.windowSizeSeconds * 1000);
+    }
+    if (policy.refillRatePerSecond && policy.refillRatePerSecond > 0) {
+      ttlMs = Math.max(ttlMs, (policy.capacity / policy.refillRatePerSecond) * 1000);
+    }
+  }
+  return Math.ceil(ttlMs);
 }
 
 function fallbackAllow(nowMs: number): ConsumeResult {

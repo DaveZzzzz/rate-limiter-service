@@ -10,6 +10,9 @@ export class PolicyStore {
   }
 
   upsert(policy: RateLimitPolicy): void {
+    if (!Number.isFinite(policy.capacity) || policy.capacity <= 0) {
+      throw new Error(`Policy ${policy.id} must have a positive capacity`);
+    }
     const existing = this.byTenant.get(policy.tenantId) ?? [];
     const next = existing.filter((p) => p.id !== policy.id);
     next.push(policy);

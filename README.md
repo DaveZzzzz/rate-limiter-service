@@ -70,6 +70,7 @@ Allowed responses are `200` with `X-RateLimit-Limit`, `X-RateLimit-Remaining`, a
 ```bash
 curl -X POST http://localhost:3000/v1/rate-limit/reset \
   -H 'Content-Type: application/json' \
+  -H 'x-admin-token: change-me' \
   -d '{"tenantId":"org-acme-prod"}'
 ```
 
@@ -78,7 +79,8 @@ Optional `key` substring clears a subset of buckets for that tenant.
 ### Metrics
 
 ```bash
-curl http://localhost:3000/v1/tenants/org-acme-prod/metrics
+curl http://localhost:3000/v1/tenants/org-acme-prod/metrics \
+  -H 'x-admin-token: change-me'
 curl http://localhost:3000/metrics
 ```
 
@@ -107,5 +109,6 @@ curl -i http://localhost:3000/protected/demo \
 | `HOST` | `0.0.0.0` | Bind address |
 | `FAIL_OPEN` | `false` | Allow on engine errors / unknown tenants |
 | `TRUSTED_PROXIES` | empty | Comma-separated proxy IPs allowed to set `X-Forwarded-For` |
+| `ADMIN_TOKEN` | unset | Shared secret for `/v1/rate-limit/reset` and tenant JSON metrics (`x-admin-token` or `Authorization: Bearer`) |
 
 Design notes live in [DECISIONS.md](./DECISIONS.md). AI usage is recorded in [AI_USAGE.md](./AI_USAGE.md).

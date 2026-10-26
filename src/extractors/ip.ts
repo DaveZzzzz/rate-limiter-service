@@ -5,7 +5,10 @@ import { isIP } from "node:net";
  * IPv6 addresses are masked to `prefixLength` (default /64) so SLAAC
  * address cycling cannot evade a per-address limit.
  */
-export function canonicalizeClientIp(ip: string, ipv6PrefixLength = 64): string {
+export function canonicalizeClientIp(ip: string | null | undefined, ipv6PrefixLength = 64): string {
+  if (typeof ip !== "string" || !ip) {
+    return "unknown";
+  }
   const trimmed = stripZoneId(ip.trim());
   if (!trimmed) {
     return "unknown";
