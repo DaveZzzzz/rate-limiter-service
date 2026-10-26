@@ -48,6 +48,16 @@ export class BucketStore {
     return this.buckets.get(key);
   }
 
+  touchExisting(key: string, nowMs: number): StoredBucket | undefined {
+    const existing = this.buckets.get(key);
+    if (!existing) {
+      return undefined;
+    }
+    existing.lastAccessMs = nowMs;
+    this.touch(existing);
+    return existing;
+  }
+
   getOrCreate(key: string, policy: RateLimitPolicy, nowMs: number): StoredBucket {
     const existing = this.buckets.get(key);
     if (existing) {

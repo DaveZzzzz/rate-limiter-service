@@ -109,7 +109,7 @@ describe("HTTP API", () => {
     expect(metrics.statusCode).toBe(200);
     expect(JSON.parse(metrics.body).totalEvaluations).toBe(1);
 
-    const promo = await app.inject({ method: "GET", url: "/metrics" });
+    const promo = await app.inject({ method: "GET", url: "/metrics", headers: adminHeaders });
     expect(promo.statusCode).toBe(200);
     expect(promo.body).toContain("rate_limit_evaluations_total");
   });

@@ -59,7 +59,10 @@ export async function registerRoutes(app: FastifyInstance, limiter: RateLimiter)
     return limiter.tenantMetrics(request.params.tenantId);
   });
 
-  app.get("/metrics", async (_request, reply) => {
+  app.get("/metrics", async (request, reply) => {
+    if (await rejectIfUnauthorized(request, reply)) {
+      return;
+    }
     return reply.type("text/plain; version=0.0.4").send(limiter.prometheus());
   });
 }

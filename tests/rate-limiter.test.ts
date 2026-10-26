@@ -309,6 +309,37 @@ describe("store configuration", () => {
     expect(limiter.evaluate(ctx()).allowed).toBe(false);
     clock.advance(61_000);
     expect(limiter.evaluate(ctx()).allowed).toBe(false);
+    clock.advance(70_000);
+    expect(limiter.evaluate(ctx({ userId: "other" })).allowed).toBe(true);
+    expect(limiter.evaluate(ctx()).allowed).toBe(false);
+  });
+
+  it("keeps exhausted buckets alive while denials continue", () => {
+    const clock = new FakeClock(0);
+    limiter = new RateLimiter({
+      clock,
+      ttlMs: 1_000,
+      sweepIntervalMs: 60_000,
+      policies: [
+        {
+          id: "user",
+          tenantId,
+          name: "user",
+          algorithm: "token-bucket",
+          capacity: 1,
+          refillRatePerSecond: 0.01,
+          keyStrategy: { dimensions: ["userId"] },
+        },
+      ],
+    });
+
+    expect(limiter.evaluate(ctx()).allowed).toBe(true);
+    expect(limiter.evaluate(ctx()).allowed).toBe(false);
+    clock.advance(600);
+    expect(limiter.evaluate(ctx()).allowed).toBe(false);
+    clock.advance(600);
+    expect(limiter.evaluate(ctx({ userId: "other" })).allowed).toBe(true);
+    expect(limiter.evaluate(ctx()).allowed).toBe(false);
   });
 });
 

@@ -173,7 +173,7 @@ export class RateLimiter {
   private peekAll(items: Applicable[], cost: number, nowMs: number) {
     return items.map((item) => {
       const algorithm = getAlgorithm(item.policy);
-      const existing = this.buckets.get(item.key);
+      const existing = this.buckets.touchExisting(item.key, nowMs);
       const state = existing?.state ?? algorithm.createState(item.policy, nowMs);
       return { item, result: algorithm.peek(state, item.policy, cost, nowMs) };
     });
@@ -235,7 +235,8 @@ function defaultTtlMs(policies: RateLimitPolicy[]): number {
   let ttlMs = 60_000;
   for (const policy of policies) {
     if (policy.windowSizeSeconds && policy.windowSizeSeconds > 0) {
-      ttlMs = Math.max(ttlMs, policy.windowSizeSeconds * 1000);
+      const windows = policy.algorithm === "sliding-window" ? 2 : 1;
+      ttlMs = Math.max(ttlMs, policy.windowSizeSeconds * 1000 * windows);
     }
     if (policy.refillRatePerSecond && policy.refillRatePerSecond > 0) {
       ttlMs = Math.max(ttlMs, (policy.capacity / policy.refillRatePerSecond) * 1000);
