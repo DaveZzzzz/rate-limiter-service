@@ -8,4 +8,4 @@ services:
       HOST: "0.0.0.0"
       FAIL_OPEN: "false"
       TRUSTED_PROXIES: ""
-      ADMIN_TOKEN: "change-me"
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}

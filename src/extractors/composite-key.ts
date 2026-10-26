@@ -1,6 +1,9 @@
+import { createHash } from "node:crypto";
 import type { KeyDimension, RateLimitPolicy, RequestContext } from "../types.js";
 import { canonicalizeClientIp } from "./ip.js";
 import { headerValue } from "./proxy.js";
+
+const MAX_KEY_PART_LENGTH = 256;
 
 export function matchesPolicy(policy: RateLimitPolicy, ctx: RequestContext): boolean {
   const match = policy.match;
@@ -30,15 +33,23 @@ export function isTenantPolicy(policy: RateLimitPolicy): boolean {
 }
 
 export function buildCompositeKey(policy: RateLimitPolicy, ctx: RequestContext): string {
-  const parts = [`t=${encodeURIComponent(ctx.tenantId)}`, `p=${encodeURIComponent(policy.id)}`];
+  const parts = [`t=${boundKeyPart(ctx.tenantId)}`, `p=${boundKeyPart(policy.id)}`];
   const dimensions = isTenantPolicy(policy)
     ? ([] as KeyDimension[])
     : policy.keyStrategy.dimensions;
 
   for (const dimension of dimensions) {
-    parts.push(`${dimension}=${encodeURIComponent(dimensionValue(dimension, policy, ctx))}`);
+    parts.push(`${dimension}=${boundKeyPart(dimensionValue(dimension, policy, ctx))}`);
   }
   return parts.join("|");
+}
+
+function boundKeyPart(value: string): string {
+  const encoded = encodeURIComponent(value);
+  if (encoded.length <= MAX_KEY_PART_LENGTH) {
+    return encoded;
+  }
+  return `h:${createHash("sha256").update(value).digest("hex")}`;
 }
 
 function dimensionValue(

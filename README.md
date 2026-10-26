@@ -39,7 +39,7 @@ npm run bench
 ## Docker
 
 ```bash
-docker compose up --build
+ADMIN_TOKEN=your-secret docker compose up --build
 ```
 
 The API listens on `http://localhost:3000`.
@@ -70,7 +70,7 @@ Allowed responses are `200` with `X-RateLimit-Limit`, `X-RateLimit-Remaining`, a
 ```bash
 curl -X POST http://localhost:3000/v1/rate-limit/reset \
   -H 'Content-Type: application/json' \
-  -H 'x-admin-token: change-me' \
+  -H "x-admin-token: $ADMIN_TOKEN" \
   -d '{"tenantId":"org-acme-prod"}'
 ```
 
@@ -80,9 +80,9 @@ Optional `key` substring clears a subset of buckets for that tenant.
 
 ```bash
 curl http://localhost:3000/v1/tenants/org-acme-prod/metrics \
-  -H 'x-admin-token: change-me'
+  -H "x-admin-token: $ADMIN_TOKEN"
 curl http://localhost:3000/metrics \
-  -H 'x-admin-token: change-me'
+  -H "x-admin-token: $ADMIN_TOKEN"
 ```
 
 ### Middleware demo

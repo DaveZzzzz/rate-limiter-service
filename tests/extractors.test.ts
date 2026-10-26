@@ -107,4 +107,30 @@ describe("composite keys", () => {
     const honest: RequestContext = { ...injected, userId: "usr_1" };
     expect(buildCompositeKey(userPolicy, injected)).not.toBe(buildCompositeKey(bothPolicy, honest));
   });
+
+  it("hashes oversized identity values so Map keys stay bounded", () => {
+    const userPolicy: RateLimitPolicy = {
+      id: "user",
+      tenantId: "org",
+      name: "user",
+      algorithm: "token-bucket",
+      capacity: 1,
+      refillRatePerSecond: 1,
+      keyStrategy: { dimensions: ["userId"] },
+    };
+    const longA: RequestContext = {
+      tenantId: "org",
+      clientIp: "203.0.113.5",
+      userId: "a".repeat(10_000),
+      route: "/api",
+      method: "GET",
+      headers: {},
+    };
+    const longB: RequestContext = { ...longA, userId: "b".repeat(10_000) };
+    const keyA = buildCompositeKey(userPolicy, longA);
+    const keyB = buildCompositeKey(userPolicy, longB);
+    expect(keyA.length).toBeLessThan(300);
+    expect(keyB.length).toBeLessThan(300);
+    expect(keyA).not.toBe(keyB);
+  });
 });
