@@ -1,0 +1,11 @@
+services:
+  rate-limiter:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      HOST: "0.0.0.0"
+      FAIL_OPEN: "false"
+      TRUSTED_PROXIES: ""
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
